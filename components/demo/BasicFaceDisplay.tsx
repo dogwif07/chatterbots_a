@@ -44,5 +44,3 @@ export default function BasicFaceDisplay() {
     </div>
   );
 }
-
-export default BasicFaceDisplay
