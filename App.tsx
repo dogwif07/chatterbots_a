@@ -28,7 +28,9 @@ import { LiveAPIProvider } from './contexts/LiveAPIContext';
 import { useUI, useUser } from './lib/state';
 
 const API_KEY = process.env.API_KEY;
+console.log('API_KEY available:', !!API_KEY);
 if (typeof API_KEY !== 'string') {
+  console.error('Missing API_KEY environment variable');
   throw new Error(
     'Missing required environment variable: API_KEY'
   );

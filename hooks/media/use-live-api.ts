@@ -137,20 +137,27 @@ export function useLiveApi({
 
   const connect = useCallback(
     async (overrideConfig?: LiveConnectConfig) => {
+      console.log('useLiveApi connect called:', { connected, clientStatus: client.status });
+      
       // Prevent multiple connection attempts
       if (connected) {
+        console.log('Already connected, skipping');
         return;
       }
       
       const configToUse = overrideConfig || config;
       if (!configToUse) {
+        console.error('No config provided for connection');
         throw new Error('config has not been set');
       }
       
+      console.log('Connecting with config:', configToUse);
       setGroundingChunks([]);
       try {
         await client.connect(configToUse);
+        console.log('Client connect successful');
       } catch (error) {
+        console.error('Client connect failed:', error);
         setConnected(false);
         throw error;
       }
@@ -159,25 +166,33 @@ export function useLiveApi({
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
+    console.log('useLiveApi disconnect called:', { connected, clientStatus: client.status });
+    
     // If not connected and no disconnect in progress, return immediately
     if (!connected && client.status !== 'connected' && !disconnectPromiseRef.current) {
+      console.log('Not connected and no disconnect in progress, skipping');
       return Promise.resolve();
     }
     
     // If a disconnect is already in progress, return its promise
     if (disconnectPromiseRef.current) {
+      console.log('Disconnect already in progress, returning existing promise');
       return disconnectPromiseRef.current;
     }
 
+    console.log('Starting disconnect process...');
     const promise = new Promise<void>((resolve, reject) => {
       disconnectResolver.current = resolve;
       try {
         client.disconnect();
+        console.log('Client disconnect called');
         // If client is already disconnected, resolve immediately
         if (client.status === 'disconnected') {
+          console.log('Client already disconnected, resolving immediately');
           setTimeout(resolve, 0);
         }
       } catch (error) {
+        console.error('Client disconnect failed:', error);
         disconnectResolver.current = null; // Clean up resolver on sync error
         reject(error);
       }

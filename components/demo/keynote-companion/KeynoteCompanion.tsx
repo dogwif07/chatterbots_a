@@ -23,41 +23,14 @@ export default function KeynoteCompanion() {
   const user = useUser();
   const { current } = useAgent();
   const { useGrounding } = useUI();
-  const hasSetInitialConfigRef = useRef(false);
   const hasGreetedRef = useRef(false);
 
-  // Set initial config once on mount
+  console.log('KeynoteCompanion render:', { connected, clientStatus: client.status });
+
+  // Set up initial config
   useEffect(() => {
-    if (!hasSetInitialConfigRef.current) {
-      const newConfig: LiveConnectConfig = {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: current.voice },
-          },
-        },
-        systemInstruction: {
-          parts: [
-            {
-              text: createSystemInstructions(current, user),
-            },
-          ],
-        },
-      };
-
-      if (useGrounding) {
-        newConfig.tools = [{ googleSearch: {} }];
-      }
-
-      setConfig(newConfig);
-      hasSetInitialConfigRef.current = true;
-    }
-  }, []);
-
-  // Update config when settings change (but don't auto-reconnect)
-  useEffect(() => {
-    if (!hasSetInitialConfigRef.current) return;
-
+    console.log('Setting up initial config...');
+    
     const newConfig: LiveConnectConfig = {
       responseModalities: [Modality.AUDIO],
       speechConfig: {
@@ -78,31 +51,36 @@ export default function KeynoteCompanion() {
       newConfig.tools = [{ googleSearch: {} }];
     }
 
-    // Only update config if it has actually changed
-    const configChanged = JSON.stringify(newConfig) !== JSON.stringify(config);
-    if (configChanged) {
-      setConfig(newConfig);
-    }
-  }, [user, current, useGrounding, setConfig, config]);
+    console.log('Setting config:', newConfig);
+    setConfig(newConfig);
+  }, [user, current, useGrounding, setConfig]);
 
-  // Send initial greeting when connection is first established
+  // Send greeting when connected
   useEffect(() => {
+    console.log('Connection effect:', { connected, clientStatus: client.status, hasGreeted: hasGreetedRef.current });
+    
     if (connected && client.status === 'connected' && !hasGreetedRef.current) {
+      console.log('Sending initial greeting...');
       hasGreetedRef.current = true;
+      
       setTimeout(() => {
         if (client.status === 'connected') {
+          console.log('Actually sending greeting message');
           client.send(
             {
               text: 'Greet the user and introduce yourself and your role.',
             },
             true
           );
+        } else {
+          console.log('Client disconnected before greeting could be sent');
         }
       }, 1000);
     }
     
     // Reset greeting flag when disconnected
     if (!connected) {
+      console.log('Resetting greeting flag due to disconnection');
       hasGreetedRef.current = false;
     }
   }, [client, connected]);

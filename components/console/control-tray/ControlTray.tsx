@@ -35,10 +35,12 @@ function ControlTray({ children }: ControlTrayProps) {
   const [muted, setMuted] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const connectButtonRef = useRef<HTMLButtonElement>(null);
-  const micPermissionDenied = useRef(false);
+  const audioRecorderStarted = useRef(false);
 
   const { useGrounding, setUseGrounding } = useUI();
   const { client, connected, connect, disconnect } = useLiveAPIContext();
+
+  console.log('ControlTray render:', { connected, isConnecting, muted });
 
   useEffect(() => {
     if (!connected && connectButtonRef.current) {
@@ -47,8 +49,14 @@ function ControlTray({ children }: ControlTrayProps) {
   }, [connected]);
 
   useEffect(() => {
+    console.log('Audio recorder effect:', { connected, muted, audioRecorderStarted: audioRecorderStarted.current });
+
     const onData = (base64: string) => {
-      if (client.status !== 'connected') return;
+      console.log('Audio data received, client status:', client.status);
+      if (client.status !== 'connected') {
+        console.warn('Trying to send audio data but client not connected');
+        return;
+      }
       client.sendRealtimeInput([
         {
           mimeType: 'audio/pcm;rate=16000',
@@ -56,68 +64,100 @@ function ControlTray({ children }: ControlTrayProps) {
         },
       ]);
     };
+
+    // Clean up previous listeners
+    audioRecorder.off('data', onData);
     
-    // Only start recording if connected and not muted and not previously denied
-    if (connected && !muted && !micPermissionDenied.current) {
-      audioRecorder
-        .on('data', onData)
-        .start()
-        .catch(error => {
-          console.error('Error starting audio recorder:', error);
-          micPermissionDenied.current = true;
-          client.emit(
-            'error',
-            new ErrorEvent('error', {
-              error,
-              message: 'Could not start microphone. Please check permissions.',
-            })
-          );
-          // Don't disconnect here - let user manually disconnect if needed
-        });
+    if (connected && !muted) {
+      console.log('Starting audio recorder...');
+      audioRecorder.on('data', onData);
+      
+      if (!audioRecorderStarted.current) {
+        audioRecorder
+          .start()
+          .then(() => {
+            console.log('Audio recorder started successfully');
+            audioRecorderStarted.current = true;
+          })
+          .catch(error => {
+            console.error('Error starting audio recorder:', error);
+            audioRecorderStarted.current = false;
+            // Don't emit error to client here - let user try again
+          });
+      }
     } else {
-      audioRecorder.stop();
+      console.log('Stopping audio recorder...');
+      if (audioRecorderStarted.current) {
+        audioRecorder.stop();
+        audioRecorderStarted.current = false;
+      }
     }
-    
+
     return () => {
       audioRecorder.off('data', onData);
     };
   }, [connected, client, muted, audioRecorder]);
 
+  // Reset audio recorder state when disconnected
+  useEffect(() => {
+    if (!connected) {
+      audioRecorderStarted.current = false;
+    }
+  }, [connected]);
+
   const handleConnect = async () => {
-    if (connected || isConnecting) return;
+    console.log('Connect button clicked:', { connected, isConnecting });
     
+    if (connected || isConnecting) {
+      console.log('Already connected or connecting, ignoring');
+      return;
+    }
+    
+    console.log('Starting connection process...');
     setIsConnecting(true);
-    micPermissionDenied.current = false;
     
     try {
       await connect();
+      console.log('Connection successful');
     } catch (error) {
-      console.error('Failed to connect:', error);
+      console.error('Connection failed:', error);
       client.emit(
         'error',
         new ErrorEvent('error', {
           error: error as Error,
-          message:
-            'Connection failed. Please check your API key and network status.',
+          message: `Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         })
       );
     } finally {
+      console.log('Connection process finished, resetting isConnecting');
       setIsConnecting(false);
     }
   };
 
   const handleDisconnect = async () => {
-    if (!connected || isConnecting) return;
+    console.log('Disconnect button clicked:', { connected, isConnecting });
     
+    if (!connected || isConnecting) {
+      console.log('Not connected or already connecting, ignoring');
+      return;
+    }
+    
+    console.log('Starting disconnect process...');
     setIsConnecting(true);
+    
     try {
       await disconnect();
+      console.log('Disconnect successful');
     } catch (error) {
-      console.error('Failed to disconnect:', error);
+      console.error('Disconnect failed:', error);
     } finally {
+      console.log('Disconnect process finished, resetting isConnecting');
       setIsConnecting(false);
     }
   };
+
+  const buttonDisabled = isConnecting;
+  console.log('Button state:', { connected, isConnecting, disabled: buttonDisabled });
 
   return (
     <section className="control-tray">
@@ -155,7 +195,7 @@ function ControlTray({ children }: ControlTrayProps) {
             ref={connectButtonRef}
             className={cn('action-button connect-toggle', { connected })}
             onClick={connected ? handleDisconnect : handleConnect}
-            disabled={isConnecting}
+            disabled={buttonDisabled}
           >
             <span className="material-symbols-outlined filled">
               {isConnecting ? 'sync' : connected ? 'pause' : 'play_arrow'}
@@ -163,7 +203,7 @@ function ControlTray({ children }: ControlTrayProps) {
           </button>
         </div>
         <span className="text-indicator">
-          {isConnecting ? 'Connecting...' : 'Streaming'}
+          {isConnecting ? 'Connecting...' : connected ? 'Streaming' : 'Ready'}
         </span>
       </div>
     </section>
