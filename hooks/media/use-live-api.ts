@@ -49,8 +49,6 @@ export function useLiveApi({
   const client = useMemo(() => new GenAILiveClient(apiKey, model), [apiKey, model]);
 
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
-  const disconnectResolver = useRef<(() => void) | null>(null);
-  const disconnectPromiseRef = useRef<Promise<void> | null>(null);
 
   const [volume, setVolume] = useState(0);
   const [connected, setConnected] = useState(false);
@@ -138,31 +136,21 @@ export function useLiveApi({
 
   const connect = useCallback(
     async (overrideConfig?: LiveConnectConfig) => {
-      console.log('useLiveApi connect called:', { 
-        connected, 
-        clientStatus: client.status,
-        hasConfig: !!config || !!overrideConfig 
-      });
-      
-      // Prevent multiple connection attempts
       if (connected && client.status === 'connected') {
-        console.log('Already connected, skipping');
+        console.log('Already connected');
         return;
       }
       
       const configToUse = overrideConfig || config;
       if (!configToUse) {
-        console.error('No config provided for connection - waiting for config');
-        throw new Error('Config not yet available - please try again');
+        throw new Error('No config available for connection');
       }
       
-      console.log('Connecting with config:', configToUse);
       setGroundingChunks([]);
+      
       try {
         await client.connect(configToUse);
-        console.log('Client connect successful');
       } catch (error) {
-        console.error('Client connect failed:', error);
         setConnected(false);
         throw error;
       }
@@ -171,56 +159,25 @@ export function useLiveApi({
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
-    console.log('useLiveApi disconnect called:', { connected, clientStatus: client.status });
-    
-    // If client is already disconnected and no disconnect in progress, return immediately
-    if (client.status === 'disconnected' && !disconnectPromiseRef.current) {
-      console.log('Not connected and no disconnect in progress, skipping');
+    if (client.status === 'disconnected') {
       return Promise.resolve();
     }
     
-    // If a disconnect is already in progress, return its promise
-    if (disconnectPromiseRef.current) {
-      console.log('Disconnect already in progress, returning existing promise');
-      return disconnectPromiseRef.current;
-    }
 
-    console.log('Starting disconnect process...');
-    const promise = new Promise<void>((resolve) => {
-      disconnectResolver.current = () => {
-        console.log('Disconnect resolved');
+
+    return new Promise<void>((resolve) => {
+      const cleanup = () => {
+        setConnected(false);
         resolve();
       };
+      
       try {
         client.disconnect();
-        console.log('Client disconnect called');
+        cleanup();
       } catch (error) {
-        console.error('Client disconnect failed:', error);
-        disconnectResolver.current = null;
-        resolve(); // Still resolve to avoid hanging state
+        cleanup();
       }
     });
-
-    // Add a timeout to ensure disconnect doesn't hang forever
-    setTimeout(() => {
-      if (disconnectResolver.current) {
-        console.log('Disconnect timeout - forcing resolution');
-        disconnectResolver.current();
-        disconnectResolver.current = null;
-      }
-    }, 5000);
-
-    disconnectPromiseRef.current = promise;
-
-    // Function to clear the promise ref once operation is complete
-    const clearPromiseRef = () => {
-      disconnectPromiseRef.current = null;
-    };
-
-    // Attach cleanup to the promise
-    promise.then(clearPromiseRef, clearPromiseRef);
-
-    return promise;
   }, [client, connected]);
 
   return {

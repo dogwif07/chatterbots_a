@@ -96,7 +96,7 @@ export const useUI = create<{
   useGrounding: boolean;
   setUseGrounding: (use: boolean) => void;
 }>(set => ({
-  showUserConfig: true,
+  showUserConfig: false,
   setShowUserConfig: (show: boolean) => set({ showUserConfig: show }),
   showAgentEdit: false,
   setShowAgentEdit: (show: boolean) => set({ showAgentEdit: show }),

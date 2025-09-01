@@ -194,12 +194,27 @@ export class GenAILiveClient {
   }
 
   public sendRealtimeInput(chunks: Array<{ mimeType: string; data: string }>) {
-    if (this._status !== 'connected' || !this._session) {
-      console.warn('Attempted to send realtime input when not connected. Status:', this._status);
+    // Multiple layers of connection validation
+    if (this._status !== 'connected' || !this.session) {
       return;
     }
+    
+    // Check WebSocket state
+    if (this.session.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    
     chunks.forEach(chunk => {
-      this._session!.sendRealtimeInput({ media: chunk });
+      try {
+        this.session!.sendRealtimeInput({ media: chunk });
+      } catch (error) {
+        // Silently ignore WebSocket state errors
+        if (error instanceof Error && 
+            !error.message.includes('CLOSING') && 
+            !error.message.includes('CLOSED')) {
+          console.error('Error sending realtime input:', error);
+        }
+      }
     });
 
     let hasAudio = false;
