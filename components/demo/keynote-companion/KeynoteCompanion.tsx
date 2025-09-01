@@ -116,7 +116,7 @@ export default function KeynoteCompanion() {
   // Instruct the model to send an initial greeting message
   useEffect(() => {
     const beginSession = async () => {
-      if (!connected) return;
+      if (!connected || client.status !== 'connected') return;
       client.send(
         {
           text: 'Greet the user and introduce yourself and your role.',
