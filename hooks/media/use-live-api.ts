@@ -168,8 +168,8 @@ export function useLiveApi({
   const disconnect = useCallback(async (): Promise<void> => {
     console.log('useLiveApi disconnect called:', { connected, clientStatus: client.status });
     
-    // If not connected and no disconnect in progress, return immediately
-    if (!connected && client.status !== 'connected' && !disconnectPromiseRef.current) {
+    // If client is already disconnected and no disconnect in progress, return immediately
+    if (client.status === 'disconnected' && !disconnectPromiseRef.current) {
       console.log('Not connected and no disconnect in progress, skipping');
       return Promise.resolve();
     }
@@ -181,22 +181,29 @@ export function useLiveApi({
     }
 
     console.log('Starting disconnect process...');
-    const promise = new Promise<void>((resolve, reject) => {
-      disconnectResolver.current = resolve;
+    const promise = new Promise<void>((resolve) => {
+      disconnectResolver.current = () => {
+        console.log('Disconnect resolved');
+        resolve();
+      };
       try {
         client.disconnect();
         console.log('Client disconnect called');
-        // If client is already disconnected, resolve immediately
-        if (client.status === 'disconnected') {
-          console.log('Client already disconnected, resolving immediately');
-          setTimeout(resolve, 0);
-        }
       } catch (error) {
         console.error('Client disconnect failed:', error);
-        disconnectResolver.current = null; // Clean up resolver on sync error
-        reject(error);
+        disconnectResolver.current = null;
+        resolve(); // Still resolve to avoid hanging state
       }
     });
+
+    // Add a timeout to ensure disconnect doesn't hang forever
+    setTimeout(() => {
+      if (disconnectResolver.current) {
+        console.log('Disconnect timeout - forcing resolution');
+        disconnectResolver.current();
+        disconnectResolver.current = null;
+      }
+    }, 5000);
 
     disconnectPromiseRef.current = promise;
 

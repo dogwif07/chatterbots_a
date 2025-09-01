@@ -190,7 +190,7 @@ export class GenAILiveClient {
 
   public sendRealtimeInput(chunks: Array<{ mimeType: string; data: string }>) {
     if (this._status !== 'connected' || !this.session) {
-      this.emit('error', new ErrorEvent('Client is not connected'));
+      console.warn('Attempted to send realtime input when not connected. Status:', this._status);
       return;
     }
     chunks.forEach(chunk => {

@@ -20,7 +20,7 @@
 
 import cn from 'classnames';
 
-import { memo, ReactNode, useEffect, useRef, useState } from 'react';
+import { memo, ReactNode, useEffect, useRef, useState, useCallback } from 'react';
 import { AudioRecorder } from '../../../lib/audio-recorder';
 
 import { useLiveAPIContext } from '../../../contexts/LiveAPIContext';
@@ -36,11 +36,12 @@ function ControlTray({ children }: ControlTrayProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const connectButtonRef = useRef<HTMLButtonElement>(null);
   const audioRecorderStarted = useRef(false);
+  const connectionTimeoutRef = useRef<NodeJS.Timeout>();
 
   const { useGrounding, setUseGrounding } = useUI();
-  const { client, connected, connect, disconnect } = useLiveAPIContext();
+  const { client, connected, connect, disconnect, volume } = useLiveAPIContext();
 
-  console.log('ControlTray render:', { connected, isConnecting, muted });
+  console.log('ControlTray render:', { connected, isConnecting, muted, clientStatus: client.status });
 
   useEffect(() => {
     if (!connected && connectButtonRef.current) {
@@ -48,31 +49,46 @@ function ControlTray({ children }: ControlTrayProps) {
     }
   }, [connected]);
 
-  useEffect(() => {
-    console.log('Audio recorder effect:', { connected, muted, audioRecorderStarted: audioRecorderStarted.current });
-
-    const onData = (base64: string) => {
-      console.log('Audio data received, client status:', client.status);
-      if (client.status !== 'connected') {
-        console.warn('Trying to send audio data but client not connected');
-        return;
-      }
+  // Memoized onData callback to prevent unnecessary re-creations
+  const onData = useCallback((base64: string) => {
+    console.log('Audio data received, client status:', client.status, 'connected state:', connected);
+    
+    // Check both client internal status and connected state
+    if (client.status !== 'connected' || !connected) {
+      console.warn('Skipping audio data - client not properly connected');
+      return;
+    }
+    
+    try {
       client.sendRealtimeInput([
         {
           mimeType: 'audio/pcm;rate=16000',
           data: base64,
         },
       ]);
-    };
+    } catch (error) {
+      console.error('Error sending audio data:', error);
+      // Don't emit error here - let the client handle WebSocket errors
+    }
+  }, [client, connected]);
 
-    // Clean up previous listeners
+  useEffect(() => {
+    console.log('Audio recorder effect:', { 
+      connected, 
+      muted, 
+      audioRecorderStarted: audioRecorderStarted.current,
+      clientStatus: client.status 
+    });
+
+    // Clean up previous listeners to prevent duplicates
     audioRecorder.off('data', onData);
     
-    if (connected && !muted) {
-      console.log('Starting audio recorder...');
+    if (connected && client.status === 'connected' && !muted) {
+      console.log('Setting up audio recorder...');
       audioRecorder.on('data', onData);
       
       if (!audioRecorderStarted.current) {
+        console.log('Starting audio recorder...');
         audioRecorder
           .start()
           .then(() => {
@@ -82,7 +98,10 @@ function ControlTray({ children }: ControlTrayProps) {
           .catch(error => {
             console.error('Error starting audio recorder:', error);
             audioRecorderStarted.current = false;
-            // Don't emit error to client here - let user try again
+            // Show user-friendly error without disconnecting
+            if (error.message?.includes('Permission denied') || error.message?.includes('getUserMedia')) {
+              console.log('Microphone permission denied - user needs to allow microphone access');
+            }
           });
       }
     } else {
@@ -96,7 +115,7 @@ function ControlTray({ children }: ControlTrayProps) {
     return () => {
       audioRecorder.off('data', onData);
     };
-  }, [connected, client, muted, audioRecorder]);
+  }, [connected, client.status, muted, audioRecorder, onData]);
 
   // Reset audio recorder state when disconnected
   useEffect(() => {
@@ -105,10 +124,26 @@ function ControlTray({ children }: ControlTrayProps) {
     }
   }, [connected]);
 
+  // Auto-disconnect if connecting takes too long
+  useEffect(() => {
+    if (isConnecting) {
+      connectionTimeoutRef.current = setTimeout(() => {
+        console.error('Connection timeout - resetting isConnecting state');
+        setIsConnecting(false);
+      }, 15000); // 15 second timeout
+
+      return () => {
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+        }
+      };
+    }
+  }, [isConnecting]);
+
   const handleConnect = async () => {
-    console.log('Connect button clicked:', { connected, isConnecting });
+    console.log('Connect button clicked:', { connected, isConnecting, clientStatus: client.status });
     
-    if (connected || isConnecting) {
+    if (connected || isConnecting || client.status === 'connected') {
       console.log('Already connected or connecting, ignoring');
       return;
     }
@@ -121,6 +156,7 @@ function ControlTray({ children }: ControlTrayProps) {
       console.log('Connection successful');
     } catch (error) {
       console.error('Connection failed:', error);
+      // Only emit error if it's a real connection failure
       client.emit(
         'error',
         new ErrorEvent('error', {
@@ -131,14 +167,17 @@ function ControlTray({ children }: ControlTrayProps) {
     } finally {
       console.log('Connection process finished, resetting isConnecting');
       setIsConnecting(false);
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+      }
     }
   };
 
   const handleDisconnect = async () => {
-    console.log('Disconnect button clicked:', { connected, isConnecting });
+    console.log('Disconnect button clicked:', { connected, isConnecting, clientStatus: client.status });
     
-    if (!connected || isConnecting) {
-      console.log('Not connected or already connecting, ignoring');
+    if (!connected || isConnecting || client.status !== 'connected') {
+      console.log('Not connected or already processing, ignoring');
       return;
     }
     
@@ -157,13 +196,19 @@ function ControlTray({ children }: ControlTrayProps) {
   };
 
   const buttonDisabled = isConnecting;
-  console.log('Button state:', { connected, isConnecting, disabled: buttonDisabled });
+  console.log('Button state:', { connected, isConnecting, disabled: buttonDisabled, clientStatus: client.status });
+
+  // Update mic button style based on volume
+  const micButtonStyle = connected && !muted ? {
+    '--volume': `${Math.min(volume * 100, 50)}px`
+  } as React.CSSProperties : {};
 
   return (
     <section className="control-tray">
       <nav className={cn('actions-nav', { disabled: !connected })}>
         <button
           className={cn('action-button mic-button', { disabled: !connected })}
+          style={micButtonStyle}
           onClick={() => setMuted(!muted)}
           disabled={!connected}
         >
