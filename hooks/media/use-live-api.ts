@@ -28,13 +28,9 @@ import { DEFAULT_LIVE_API_MODEL } from '../../lib/constants';
 
 export type UseLiveApiResults = {
   client: GenAILiveClient;
-  setConfig: (config: LiveConnectConfig) => void;
-  config: LiveConnectConfig;
-
-  connect: (overrideConfig?: LiveConnectConfig) => Promise<void>;
+  connect: (config: LiveConnectConfig) => Promise<void>;
   disconnect: () => Promise<void>;
   connected: boolean;
-
   volume: number;
   groundingChunks: GroundingChunk[];
 };
@@ -47,12 +43,10 @@ export function useLiveApi({
   model?: string;
 }): UseLiveApiResults {
   const client = useMemo(() => new GenAILiveClient(apiKey, model), [apiKey, model]);
-
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
 
   const [volume, setVolume] = useState(0);
   const [connected, setConnected] = useState(false);
-  const [config, setConfig] = useState<LiveConnectConfig>({});
   const [groundingChunks, setGroundingChunks] = useState<GroundingChunk[]>([]);
 
   // Initialize audio context and streamer
@@ -120,29 +114,25 @@ export function useLiveApi({
   }, [client]);
 
   const connect = useCallback(
-    async (overrideConfig?: LiveConnectConfig) => {
-      if (connected) {
+    async (config: LiveConnectConfig) => {
+      if (connected || client.status === 'connecting') {
         return;
-      }
-      
-      const configToUse = overrideConfig || config;
-      if (!configToUse) {
-        throw new Error('No config available for connection');
       }
       
       setGroundingChunks([]);
       
       try {
-        const success = await client.connect(configToUse);
+        const success = await client.connect(config);
         if (!success) {
           throw new Error('Failed to connect to Live API');
         }
       } catch (error) {
+        console.error('Connection error:', error);
         setConnected(false);
         throw error;
       }
     },
-    [client, config, connected]
+    [client, connected]
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
@@ -152,17 +142,15 @@ export function useLiveApi({
     
     try {
       client.disconnect();
-      setConnected(false);
     } catch (error) {
       console.error('Error during disconnect:', error);
-      setConnected(false);
     }
+    
+    setConnected(false);
   }, [client, connected]);
 
   return {
     client,
-    config,
-    setConfig,
     connect,
     connected,
     disconnect,

@@ -177,15 +177,22 @@ export class GenAILiveClient {
 
   public disconnect() {
     try {
-      this._session?.close();
+      if (this._session) {
+        this._session.close();
+        this._session = undefined;
+      }
     } catch (error) {
       console.error('Error closing session:', error);
-    } finally {
-      this._session = undefined;
-      this._status = 'disconnected';
     }
-
-    this.log('client.close', `Disconnected`);
+    
+    this._session = undefined;
+    this._status = 'disconnected';
+    
+    try {
+      this.log('client.close', `Disconnected`);
+    } catch (error) {
+      console.error('Error logging disconnect:', error);
+    }
     return true;
   }
 
