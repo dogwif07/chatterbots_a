@@ -1,10 +1,10 @@
 import cn from 'classnames';
-import { memo, ReactNode, useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { memo, ReactNode, useEffect, useRef, useState, useCallback } from 'react';
 import { AudioRecorder } from '../../../lib/audio-recorder';
 import { useLiveAPIContext } from '../../../contexts/LiveAPIContext';
 import { useUI, useAgent, useUser } from '@/lib/state';
 import { createSystemInstructions } from '@/lib/prompts';
-import { LiveConnectConfig, Modality } from '@google/genai';
+import { Modality } from '@google/genai';
 
 export type ControlTrayProps = {
   children?: ReactNode;
@@ -16,42 +16,12 @@ function ControlTray({ children }: ControlTrayProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   
   const connectButtonRef = useRef<HTMLButtonElement>(null);
-  const audioRecorderStarted = useRef(false);
+  const audioRecorderRef = useRef<{ started: boolean }>({ started: false });
 
   const { useGrounding, setUseGrounding } = useUI();
-  const { client, connected, connect, disconnect, volume, setConfig } = useLiveAPIContext();
+  const { client, connected, connect, disconnect, volume } = useLiveAPIContext();
   const user = useUser();
   const { current: agent } = useAgent();
-
-  // Create stable config with memoization
-  const liveConfig = useMemo((): LiveConnectConfig => {
-    const config: LiveConnectConfig = {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: agent.voice },
-        },
-      },
-      systemInstruction: {
-        parts: [
-          {
-            text: createSystemInstructions(agent, user),
-          },
-        ],
-      },
-    };
-
-    if (useGrounding) {
-      config.tools = [{ googleSearch: {} }];
-    }
-
-    return config;
-  }, [agent.voice, agent.name, agent.personality, user.name, user.info, useGrounding]);
-
-  // Set config when it changes
-  useEffect(() => {
-    setConfig(liveConfig);
-  }, [liveConfig, setConfig]);
 
   // Focus connect button when not connected
   useEffect(() => {
@@ -78,28 +48,22 @@ function ControlTray({ children }: ControlTrayProps) {
     }
   }, [client, connected]);
 
-  // Manage audio recorder lifecycle
+  // Start audio recorder when connected and not muted
   useEffect(() => {
-    audioRecorder.off('data', onData);
-    
-    if (connected && !muted) {
+    if (connected && !muted && !audioRecorderRef.current.started) {
       audioRecorder.on('data', onData);
-      
-      if (!audioRecorderStarted.current) {
-        audioRecorder
-          .start()
-          .then(() => {
-            audioRecorderStarted.current = true;
-          })
-          .catch(error => {
-            console.error('Error starting audio recorder:', error);
-          });
-      }
-    } else {
-      if (audioRecorderStarted.current) {
-        audioRecorder.stop();
-        audioRecorderStarted.current = false;
-      }
+      audioRecorder
+        .start()
+        .then(() => {
+          audioRecorderRef.current.started = true;
+        })
+        .catch(error => {
+          console.error('Error starting audio recorder:', error);
+        });
+    } else if ((!connected || muted) && audioRecorderRef.current.started) {
+      audioRecorder.off('data', onData);
+      audioRecorder.stop();
+      audioRecorderRef.current.started = false;
     }
 
     return () => {
@@ -107,22 +71,44 @@ function ControlTray({ children }: ControlTrayProps) {
     };
   }, [connected, muted, audioRecorder, onData]);
 
-  // Reset audio recorder state when disconnected
+  // Reset states when disconnected
   useEffect(() => {
     if (!connected) {
-      audioRecorderStarted.current = false;
       setIsConnecting(false);
+      if (audioRecorderRef.current.started) {
+        audioRecorder.stop();
+        audioRecorderRef.current.started = false;
+      }
     }
-  }, [connected]);
+  }, [connected, audioRecorder]);
 
   const handleConnect = async () => {
-    if (connected || isConnecting) {
+    if (isConnecting || connected) {
       return;
     }
     
     setIsConnecting(true);
+    
     try {
-      await connect();
+      // Create config
+      const config = {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: agent.voice },
+          },
+        },
+        systemInstruction: {
+          parts: [
+            {
+              text: createSystemInstructions(agent, user),
+            },
+          ],
+        },
+        ...(useGrounding && { tools: [{ googleSearch: {} }] }),
+      };
+
+      await connect(config);
     } catch (error) {
       console.error('Connection failed:', error);
     } finally {
@@ -142,8 +128,14 @@ function ControlTray({ children }: ControlTrayProps) {
     }
   };
 
+  const toggleMute = () => {
+    if (connected) {
+      setMuted(!muted);
+    }
+  };
+
   // Update mic button style based on volume
-  const micButtonStyle = connected && !muted ? {
+  const micButtonStyle = connected && !muted && volume > 0 ? {
     '--volume': `${Math.min(volume * 100, 50)}px`
   } as React.CSSProperties : {};
 
@@ -151,9 +143,11 @@ function ControlTray({ children }: ControlTrayProps) {
     <section className="control-tray">
       <nav className="actions-nav">
         <button
-          className={cn('action-button mic-button', { disabled: !connected })}
+          className={cn('action-button mic-button', { 
+            disabled: !connected 
+          })}
           style={micButtonStyle}
-          onClick={() => setMuted(!muted)}
+          onClick={toggleMute}
           disabled={!connected}
           title={muted ? 'Unmute microphone' : 'Mute microphone'}
         >
