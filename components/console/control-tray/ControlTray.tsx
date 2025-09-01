@@ -14,7 +14,6 @@ function ControlTray({ children }: ControlTrayProps) {
   const [audioRecorder] = useState(() => new AudioRecorder());
   const [muted, setMuted] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [configReady, setConfigReady] = useState(false);
   
   const connectButtonRef = useRef<HTMLButtonElement>(null);
   const audioRecorderStarted = useRef(false);
@@ -52,7 +51,6 @@ function ControlTray({ children }: ControlTrayProps) {
   // Set config when it changes
   useEffect(() => {
     setConfig(liveConfig);
-    setConfigReady(true);
   }, [liveConfig, setConfig]);
 
   // Focus connect button when not connected
@@ -84,7 +82,7 @@ function ControlTray({ children }: ControlTrayProps) {
   useEffect(() => {
     audioRecorder.off('data', onData);
     
-    if (connected && !muted && configReady) {
+    if (connected && !muted) {
       audioRecorder.on('data', onData);
       
       if (!audioRecorderStarted.current) {
@@ -107,7 +105,7 @@ function ControlTray({ children }: ControlTrayProps) {
     return () => {
       audioRecorder.off('data', onData);
     };
-  }, [connected, muted, configReady, audioRecorder, onData]);
+  }, [connected, muted, audioRecorder, onData]);
 
   // Reset audio recorder state when disconnected
   useEffect(() => {
@@ -118,10 +116,6 @@ function ControlTray({ children }: ControlTrayProps) {
 
   const handleConnect = async () => {
     if (connected || isConnecting) {
-      return;
-    }
-    
-    if (!configReady) {
       return;
     }
     
@@ -152,7 +146,7 @@ function ControlTray({ children }: ControlTrayProps) {
     }
   };
 
-  const buttonDisabled = isConnecting || !configReady;
+  const buttonDisabled = isConnecting;
 
   // Update mic button style based on volume
   const micButtonStyle = connected && !muted ? {
@@ -190,9 +184,7 @@ function ControlTray({ children }: ControlTrayProps) {
                 ? 'Connecting...' 
                 : connected 
                 ? 'Disconnect' 
-                : configReady 
-                ? 'Connect' 
-                : 'Preparing...'
+                : 'Connect'
             }
           >
             <span className="material-symbols-outlined filled">
@@ -218,9 +210,7 @@ function ControlTray({ children }: ControlTrayProps) {
             ? 'Connecting...' 
             : connected 
             ? 'Streaming' 
-            : configReady 
-            ? 'Ready' 
-            : 'Preparing...'
+            : 'Ready'
           }
         </span>
       </div>
