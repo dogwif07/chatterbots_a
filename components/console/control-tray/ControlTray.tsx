@@ -46,6 +46,7 @@ function ControlTray({ children }: ControlTrayProps) {
 
   useEffect(() => {
     const onData = (base64: string) => {
+      if (!connected) return;
       client.sendRealtimeInput([
         {
           mimeType: 'audio/pcm;rate=16000',
