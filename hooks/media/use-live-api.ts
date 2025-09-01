@@ -96,6 +96,7 @@ export function useLiveApi({
 
     const onClose = () => {
       setConnected(false);
+      setGroundingChunks([]); // Clear grounding on disconnect
       if (disconnectResolver.current) {
         disconnectResolver.current();
         disconnectResolver.current = null;
@@ -137,18 +138,22 @@ export function useLiveApi({
 
   const connect = useCallback(
     async (overrideConfig?: LiveConnectConfig) => {
-      console.log('useLiveApi connect called:', { connected, clientStatus: client.status });
+      console.log('useLiveApi connect called:', { 
+        connected, 
+        clientStatus: client.status,
+        hasConfig: !!config || !!overrideConfig 
+      });
       
       // Prevent multiple connection attempts
-      if (connected) {
+      if (connected && client.status === 'connected') {
         console.log('Already connected, skipping');
         return;
       }
       
       const configToUse = overrideConfig || config;
       if (!configToUse) {
-        console.error('No config provided for connection');
-        throw new Error('config has not been set');
+        console.error('No config provided for connection - waiting for config');
+        throw new Error('Config not yet available - please try again');
       }
       
       console.log('Connecting with config:', configToUse);

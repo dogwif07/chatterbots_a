@@ -24,10 +24,14 @@ export default function KeynoteCompanion() {
   const { useGrounding } = useUI();
   const hasGreetedRef = useRef(false);
   const configSetRef = useRef(false);
+  const lastConfigHash = useRef('');
 
   console.log('KeynoteCompanion render:', { connected, clientStatus: client.status });
 
-  // Memoize config creation to prevent unnecessary recreations
+  // Create a stable config hash to prevent unnecessary updates
+  const configHash = `${user.name || ''}-${user.info || ''}-${current.voice}-${current.name}-${current.personality}-${useGrounding}`;
+
+  // Memoize config creation with stable dependencies
   const createConfig = useCallback((): LiveConnectConfig => {
     const config: LiveConnectConfig = {
       responseModalities: [Modality.AUDIO],
@@ -52,31 +56,36 @@ export default function KeynoteCompanion() {
     return config;
   }, [user.name, user.info, current.voice, current.name, current.personality, useGrounding]);
 
-  // Set up initial config only once or when key dependencies change
+  // Set up config only when hash changes
   useEffect(() => {
-    console.log('Setting up config...', { configSetRef: configSetRef.current, connected });
-    
-    // Only set config if it hasn't been set or if critical dependencies changed
-    if (!configSetRef.current || !connected) {
+    if (lastConfigHash.current !== configHash) {
+      console.log('Config hash changed, updating config...', { 
+        oldHash: lastConfigHash.current, 
+        newHash: configHash 
+      });
+      
       const newConfig = createConfig();
       console.log('Setting config:', newConfig);
       setConfig(newConfig);
+      lastConfigHash.current = configHash;
       configSetRef.current = true;
     }
-  }, [createConfig, setConfig, connected]);
+  }, [configHash, createConfig, setConfig]);
 
-  // Handle greeting when connected (separate from config)
+  // Handle greeting only when truly connected (separate from config)
   useEffect(() => {
     console.log('Connection effect:', { connected, clientStatus: client.status, hasGreeted: hasGreetedRef.current });
     
-    if (connected && client.status === 'connected' && !hasGreetedRef.current) {
+    if (connected && client.status === 'connected' && !hasGreetedRef.current && configSetRef.current) {
       console.log('Scheduling initial greeting...');
       hasGreetedRef.current = true;
       
-      // Use a longer delay to ensure connection is fully stable
+      // Delay greeting to ensure stable connection
       const greetingTimeout = setTimeout(() => {
-        console.log('Checking connection before sending greeting...', { clientStatus: client.status });
-        if (client.status === 'connected') {
+        console.log('Checking connection before sending greeting...', { clientStatus: client.status, connected });
+        
+        // Double-check connection is still stable
+        if (client.status === 'connected' && connected) {
           console.log('Sending greeting message');
           try {
             client.send(
@@ -89,20 +98,24 @@ export default function KeynoteCompanion() {
             console.error('Error sending greeting:', error);
           }
         } else {
-          console.log('Client no longer connected, skipping greeting');
+          console.log('Connection no longer stable, skipping greeting');
+          hasGreetedRef.current = false; // Reset so it can try again
         }
-      }, 2000); // Increased delay
+      }, 3000); // Longer delay for stability
 
-      return () => clearTimeout(greetingTimeout);
+      return () => {
+        clearTimeout(greetingTimeout);
+      };
     }
     
     // Reset greeting flag when disconnected
-    if (!connected) {
-      console.log('Resetting greeting flag due to disconnection');
-      hasGreetedRef.current = false;
-      configSetRef.current = false; // Allow config to be set again on reconnection
+    if (!connected || client.status !== 'connected') {
+      if (hasGreetedRef.current) {
+        console.log('Resetting greeting flag due to disconnection');
+        hasGreetedRef.current = false;
+      }
     }
-  }, [client, connected]);
+  }, [client, connected, configSetRef.current]); // Stable dependencies
 
   return (
     <div className="keynote-companion">

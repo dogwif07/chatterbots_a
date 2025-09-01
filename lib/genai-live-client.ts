@@ -81,6 +81,11 @@ export class GenAILiveClient {
 
   protected readonly client: GoogleGenAI;
   protected session?: Session;
+  
+  // Expose session for connection state checking
+  public get session() {
+    return this.session;
+  }
 
   private emitter = new EventEmitter<LiveClientEventTypes>();
 

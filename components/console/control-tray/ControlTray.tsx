@@ -51,11 +51,18 @@ function ControlTray({ children }: ControlTrayProps) {
 
   // Memoized onData callback to prevent unnecessary re-creations
   const onData = useCallback((base64: string) => {
-    console.log('Audio data received, client status:', client.status, 'connected state:', connected);
-    
-    // Check both client internal status and connected state
+    // Check WebSocket state before sending to prevent errors
     if (client.status !== 'connected' || !connected) {
-      console.warn('Skipping audio data - client not properly connected');
+      console.warn('Skipping audio data - client not connected:', { 
+        clientStatus: client.status, 
+        connected 
+      });
+      return;
+    }
+    
+    // Additional check for session state if available
+    if (!client.session || client.session.readyState !== WebSocket.OPEN) {
+      console.warn('Skipping audio data - WebSocket not open');
       return;
     }
     
@@ -67,8 +74,12 @@ function ControlTray({ children }: ControlTrayProps) {
         },
       ]);
     } catch (error) {
-      console.error('Error sending audio data:', error);
-      // Don't emit error here - let the client handle WebSocket errors
+      // Only log WebSocket state errors, don't crash the app
+      if (error.message?.includes('CLOSING') || error.message?.includes('CLOSED')) {
+        console.warn('WebSocket closing, stopping audio transmission');
+      } else {
+        console.error('Error sending audio data:', error);
+      }
     }
   }, [client, connected]);
 
