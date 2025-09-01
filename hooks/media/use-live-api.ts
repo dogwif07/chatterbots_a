@@ -55,7 +55,7 @@ export function useLiveApi({
   const [config, setConfig] = useState<LiveConnectConfig>({});
   const [groundingChunks, setGroundingChunks] = useState<GroundingChunk[]>([]);
 
-  // register audio for streaming server -> speakers
+  // Initialize audio context and streamer
   useEffect(() => {
     if (!audioStreamerRef.current) {
       audioContext({ id: 'audio-out' })
@@ -65,26 +65,15 @@ export function useLiveApi({
             .addWorklet<any>('vumeter-out', VolMeterWorket, (ev: any) => {
               setVolume(ev.data.volume);
             })
-            .then(() => {
-              // Successfully added worklet
-            })
             .catch(err => {
               console.error('Error adding worklet:', err);
             });
         })
         .catch(error => {
           console.error('Failed to initialize output audio context:', error);
-          client.emit(
-            'error',
-            new ErrorEvent('error', {
-              error,
-              message:
-                'Could not initialize audio output. Please check browser permissions and reload.',
-            })
-          );
         });
     }
-  }, [audioStreamerRef, client]);
+  }, []);
 
   useEffect(() => {
     const onOpen = () => {
@@ -94,7 +83,7 @@ export function useLiveApi({
 
     const onClose = () => {
       setConnected(false);
-      setGroundingChunks([]); // Clear grounding on disconnect
+      setGroundingChunks([]);
     };
 
     const stopAudioStreamer = () => {
@@ -132,8 +121,7 @@ export function useLiveApi({
 
   const connect = useCallback(
     async (overrideConfig?: LiveConnectConfig) => {
-      if (connected && client.status === 'connected') {
-        console.log('Already connected');
+      if (connected) {
         return;
       }
       
@@ -145,35 +133,30 @@ export function useLiveApi({
       setGroundingChunks([]);
       
       try {
-        await client.connect(configToUse);
+        const success = await client.connect(configToUse);
+        if (!success) {
+          throw new Error('Failed to connect to Live API');
+        }
       } catch (error) {
         setConnected(false);
         throw error;
       }
     },
-    [client, config]
+    [client, config, connected]
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
-    if (client.status === 'disconnected') {
-      return Promise.resolve();
+    if (!connected) {
+      return;
     }
     
-
-
-    return new Promise<void>((resolve) => {
-      const cleanup = () => {
-        setConnected(false);
-        resolve();
-      };
-      
-      try {
-        client.disconnect();
-        cleanup();
-      } catch (error) {
-        cleanup();
-      }
-    });
+    try {
+      client.disconnect();
+      setConnected(false);
+    } catch (error) {
+      console.error('Error during disconnect:', error);
+      setConnected(false);
+    }
   }, [client, connected]);
 
   return {
