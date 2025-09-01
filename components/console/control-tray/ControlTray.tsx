@@ -13,6 +13,7 @@ export type ControlTrayProps = {
 function ControlTray({ children }: ControlTrayProps) {
   const [audioRecorder] = useState(() => new AudioRecorder());
   const [muted, setMuted] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   
   const connectButtonRef = useRef<HTMLButtonElement>(null);
   const audioRecorderStarted = useRef(false);
@@ -110,18 +111,22 @@ function ControlTray({ children }: ControlTrayProps) {
   useEffect(() => {
     if (!connected) {
       audioRecorderStarted.current = false;
+      setIsConnecting(false);
     }
   }, [connected]);
 
   const handleConnect = async () => {
-    if (connected) {
+    if (connected || isConnecting) {
       return;
     }
     
+    setIsConnecting(true);
     try {
       await connect();
     } catch (error) {
       console.error('Connection failed:', error);
+    } finally {
+      setIsConnecting(false);
     }
   };
 
@@ -144,7 +149,7 @@ function ControlTray({ children }: ControlTrayProps) {
 
   return (
     <section className="control-tray">
-      <nav className={cn('actions-nav', { disabled: !connected })}>
+      <nav className="actions-nav">
         <button
           className={cn('action-button mic-button', { disabled: !connected })}
           style={micButtonStyle}
@@ -167,15 +172,17 @@ function ControlTray({ children }: ControlTrayProps) {
             ref={connectButtonRef}
             className={cn('action-button connect-toggle', { connected })}
             onClick={connected ? handleDisconnect : handleConnect}
-            disabled={false}
+            disabled={isConnecting}
             title={
-              connected 
+              isConnecting
+                ? 'Connecting...'
+                : connected 
                 ? 'Disconnect' 
                 : 'Connect'
             }
           >
             <span className="material-symbols-outlined filled">
-              {connected ? 'pause' : 'play_arrow'}
+              {isConnecting ? 'sync' : connected ? 'pause' : 'play_arrow'}
             </span>
           </button>
           {!connected && (
@@ -193,7 +200,9 @@ function ControlTray({ children }: ControlTrayProps) {
           )}
         </div>
         <span className="text-indicator">
-          {connected 
+          {isConnecting
+            ? 'Connecting...'
+            : connected 
             ? 'Streaming' 
             : 'Ready'
           }
