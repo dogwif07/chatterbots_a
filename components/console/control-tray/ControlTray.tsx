@@ -228,22 +228,6 @@ function ControlTray({ children }: ControlTrayProps) {
             <span className="material-symbols-outlined filled">mic_off</span>
           )}
         </button>
-        <button
-          className={cn('action-button grounding-button', {
-            active: useGrounding,
-          })}
-          onClick={() => {
-            setUseGrounding(!useGrounding);
-            configSetRef.current = false; // Reset config on grounding change
-          }}
-          title={
-            useGrounding
-              ? 'Disable Google Search Grounding'
-              : 'Enable Google Search Grounding'
-          }
-        >
-          <span className="material-symbols-outlined filled">search</span>
-        </button>
         {children}
       </nav>
 
@@ -268,6 +252,22 @@ function ControlTray({ children }: ControlTrayProps) {
               {isConnecting ? 'sync' : connected ? 'pause' : 'play_arrow'}
             </span>
           </button>
+          {!connected && (
+            <button
+              className={cn('grounding-toggle', { active: useGrounding })}
+              onClick={() => {
+                setUseGrounding(!useGrounding);
+                configSetRef.current = false; // Reset config on grounding change
+              }}
+              title={
+                useGrounding
+                  ? 'Disable Google Search Grounding'
+                  : 'Enable Google Search Grounding'
+              }
+            >
+              <span className="material-symbols-outlined filled">search</span>
+            </button>
+          )}
         </div>
         <span className="text-indicator">
           {isConnecting 
