@@ -33,7 +33,9 @@ export type ControlTrayProps = {
 function ControlTray({ children }: ControlTrayProps) {
   const [audioRecorder] = useState(() => new AudioRecorder());
   const [muted, setMuted] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const connectButtonRef = useRef<HTMLButtonElement>(null);
+  const micPermissionDenied = useRef(false);
 
   const { useGrounding, setUseGrounding } = useUI();
   const { client, connected, connect, disconnect } = useLiveAPIContext();
@@ -46,7 +48,7 @@ function ControlTray({ children }: ControlTrayProps) {
 
   useEffect(() => {
     const onData = (base64: string) => {
-      if (!connected || client.status !== 'connected') return;
+      if (client.status !== 'connected') return;
       client.sendRealtimeInput([
         {
           mimeType: 'audio/pcm;rate=16000',
@@ -55,13 +57,14 @@ function ControlTray({ children }: ControlTrayProps) {
       ]);
     };
     
-    // Only start recording if connected and not muted
-    if (connected && !muted) {
+    // Only start recording if connected and not muted and not previously denied
+    if (connected && !muted && !micPermissionDenied.current) {
       audioRecorder
         .on('data', onData)
         .start()
         .catch(error => {
           console.error('Error starting audio recorder:', error);
+          micPermissionDenied.current = true;
           client.emit(
             'error',
             new ErrorEvent('error', {
@@ -69,23 +72,22 @@ function ControlTray({ children }: ControlTrayProps) {
               message: 'Could not start microphone. Please check permissions.',
             })
           );
-          disconnect().catch(e => {
-            // Log this secondary error, but don't show another user-facing error
-            // as they are already seeing the microphone error.
-            console.error('Failed to disconnect after microphone error:', e);
-          });
+          // Don't disconnect here - let user manually disconnect if needed
         });
-    } else if (audioRecorder) {
+    } else {
       audioRecorder.stop();
     }
-    return () => {
     
+    return () => {
       audioRecorder.off('data', onData);
     };
-  }, [connected, client, muted, audioRecorder, disconnect]);
+  }, [connected, client, muted, audioRecorder]);
 
   const handleConnect = async () => {
-    if (connected) return; // Prevent multiple connection attempts
+    if (connected || isConnecting) return;
+    
+    setIsConnecting(true);
+    micPermissionDenied.current = false;
     
     try {
       await connect();
@@ -99,17 +101,21 @@ function ControlTray({ children }: ControlTrayProps) {
             'Connection failed. Please check your API key and network status.',
         })
       );
+    } finally {
+      setIsConnecting(false);
     }
   };
 
   const handleDisconnect = async () => {
-    if (!connected) return; // Prevent multiple disconnection attempts
+    if (!connected || isConnecting) return;
     
+    setIsConnecting(true);
     try {
       await disconnect();
     } catch (error) {
       console.error('Failed to disconnect:', error);
-      // Don't show a blocking error screen for disconnect failures
+    } finally {
+      setIsConnecting(false);
     }
   };
 
@@ -117,8 +123,9 @@ function ControlTray({ children }: ControlTrayProps) {
     <section className="control-tray">
       <nav className={cn('actions-nav', { disabled: !connected })}>
         <button
-          className={cn('action-button mic-button')}
+          className={cn('action-button mic-button', { disabled: !connected })}
           onClick={() => setMuted(!muted)}
+          disabled={!connected}
         >
           {!muted ? (
             <span className="material-symbols-outlined filled">mic</span>
@@ -148,14 +155,16 @@ function ControlTray({ children }: ControlTrayProps) {
             ref={connectButtonRef}
             className={cn('action-button connect-toggle', { connected })}
             onClick={connected ? handleDisconnect : handleConnect}
-            disabled={false}
+            disabled={isConnecting}
           >
             <span className="material-symbols-outlined filled">
-              {connected ? 'pause' : 'play_arrow'}
+              {isConnecting ? 'sync' : connected ? 'pause' : 'play_arrow'}
             </span>
           </button>
         </div>
-        <span className="text-indicator">Streaming</span>
+        <span className="text-indicator">
+          {isConnecting ? 'Connecting...' : 'Streaming'}
+        </span>
       </div>
     </section>
   );

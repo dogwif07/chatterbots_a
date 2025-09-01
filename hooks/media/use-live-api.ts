@@ -159,8 +159,8 @@ export function useLiveApi({
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
-    // If not connected, return immediately
-    if (!connected && !disconnectPromiseRef.current) {
+    // If not connected and no disconnect in progress, return immediately
+    if (!connected && client.status !== 'connected' && !disconnectPromiseRef.current) {
       return Promise.resolve();
     }
     
@@ -173,6 +173,10 @@ export function useLiveApi({
       disconnectResolver.current = resolve;
       try {
         client.disconnect();
+        // If client is already disconnected, resolve immediately
+        if (client.status === 'disconnected') {
+          setTimeout(resolve, 0);
+        }
       } catch (error) {
         disconnectResolver.current = null; // Clean up resolver on sync error
         reject(error);

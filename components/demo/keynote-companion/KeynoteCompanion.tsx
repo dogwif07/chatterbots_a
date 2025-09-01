@@ -17,19 +17,47 @@ export default function KeynoteCompanion() {
     connected,
     setConfig,
     config,
-    connect,
-    disconnect,
     groundingChunks,
   } = useLiveAPIContext();
   const faceCanvasRef = useRef<HTMLCanvasElement>(null);
   const user = useUser();
   const { current } = useAgent();
-  const { useGrounding, showAgentEdit, showUserConfig } = useUI();
-  const isReconnectingRef = useRef(false);
-  const hasInitializedRef = useRef(false);
+  const { useGrounding } = useUI();
+  const hasSetInitialConfigRef = useRef(false);
+  const hasGreetedRef = useRef(false);
 
-  // Update config whenever settings change (but don't auto-connect)
+  // Set initial config once on mount
   useEffect(() => {
+    if (!hasSetInitialConfigRef.current) {
+      const newConfig: LiveConnectConfig = {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: current.voice },
+          },
+        },
+        systemInstruction: {
+          parts: [
+            {
+              text: createSystemInstructions(current, user),
+            },
+          ],
+        },
+      };
+
+      if (useGrounding) {
+        newConfig.tools = [{ googleSearch: {} }];
+      }
+
+      setConfig(newConfig);
+      hasSetInitialConfigRef.current = true;
+    }
+  }, []);
+
+  // Update config when settings change (but don't auto-reconnect)
+  useEffect(() => {
+    if (!hasSetInitialConfigRef.current) return;
+
     const newConfig: LiveConnectConfig = {
       responseModalities: [Modality.AUDIO],
       speechConfig: {
@@ -57,69 +85,27 @@ export default function KeynoteCompanion() {
     }
   }, [user, current, useGrounding, setConfig, config]);
 
-  // Handle modal state - disconnect when modals are open
+  // Send initial greeting when connection is first established
   useEffect(() => {
-    if (showAgentEdit || showUserConfig) {
-      if (connected && !isReconnectingRef.current) {
-        disconnect().catch(error => {
-          console.error('Failed to disconnect on modal open:', error);
-        });
-      }
-    }
-  }, [showAgentEdit, showUserConfig, connected, disconnect]);
-
-  // Handle reconnection when connected and config changes
-  useEffect(() => {
-    // Don't reconnect if modals are open
-    if (showAgentEdit || showUserConfig) {
-      return;
-    }
-
-    // Only reconnect if we're already connected and config changed
-    if (connected && hasInitializedRef.current && !isReconnectingRef.current) {
-      const reconnect = async () => {
-        isReconnectingRef.current = true;
-        try {
-          await disconnect();
-          await connect(config);
-        } catch (error) {
-          console.error('Failed to reconnect after settings change:', error);
-          client.emit(
-            'error',
-            new ErrorEvent('error', {
-              error: error as Error,
-              message: 'Failed to apply new settings. Please try again.',
-            })
+    if (connected && client.status === 'connected' && !hasGreetedRef.current) {
+      hasGreetedRef.current = true;
+      setTimeout(() => {
+        if (client.status === 'connected') {
+          client.send(
+            {
+              text: 'Greet the user and introduce yourself and your role.',
+            },
+            true
           );
-        } finally {
-          isReconnectingRef.current = false;
         }
-      };
-      reconnect();
+      }, 1000);
     }
-
-    hasInitializedRef.current = true;
-  }, [config, connected, showAgentEdit, showUserConfig, disconnect, connect, client]);
-
-  // Send initial greeting when connection is established
-  useEffect(() => {
-    const beginSession = async () => {
-      // Wait a bit to ensure the connection is fully established
-      if (connected && client.status === 'connected' && !showAgentEdit && !showUserConfig) {
-        setTimeout(() => {
-          if (client.status === 'connected') {
-            client.send(
-              {
-                text: 'Greet the user and introduce yourself and your role.',
-              },
-              true
-            );
-          }
-        }, 500);
-      }
-    };
-    beginSession();
-  }, [client, connected, showAgentEdit, showUserConfig]);
+    
+    // Reset greeting flag when disconnected
+    if (!connected) {
+      hasGreetedRef.current = false;
+    }
+  }, [client, connected]);
 
   return (
     <div className="keynote-companion">
