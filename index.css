@@ -408,16 +408,17 @@ header:hover .createButton {
 .grounding-toggle {
   background: var(--Neutral-20);
   color: var(--Neutral-60);
-  font-size: 1.1rem;
+  font-size: 1rem;
   cursor: pointer;
   transition: all 0.2s ease-in-out;
-  width: 36px;
-  height: 36px;
-  border-radius: 18px;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
   border: 1px solid transparent;
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-left: 6px;
 }
 
 .grounding-toggle:hover {
