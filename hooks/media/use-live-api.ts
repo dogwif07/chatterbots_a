@@ -137,24 +137,36 @@ export function useLiveApi({
 
   const connect = useCallback(
     async (overrideConfig?: LiveConnectConfig) => {
+      // Prevent multiple connection attempts
+      if (connected) {
+        return;
+      }
+      
       const configToUse = overrideConfig || config;
       if (!configToUse) {
         throw new Error('config has not been set');
       }
+      
       setGroundingChunks([]);
-      await client.connect(configToUse);
+      try {
+        await client.connect(configToUse);
+      } catch (error) {
+        setConnected(false);
+        throw error;
+      }
     },
     [client, config]
   );
 
   const disconnect = useCallback(async (): Promise<void> => {
+    // If not connected, return immediately
+    if (!connected && !disconnectPromiseRef.current) {
+      return Promise.resolve();
+    }
+    
     // If a disconnect is already in progress, return its promise
     if (disconnectPromiseRef.current) {
       return disconnectPromiseRef.current;
-    }
-    // If not connected, return a resolved promise.
-    if (!connected) {
-      return Promise.resolve();
     }
 
     const promise = new Promise<void>((resolve, reject) => {

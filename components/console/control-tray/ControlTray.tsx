@@ -46,7 +46,7 @@ function ControlTray({ children }: ControlTrayProps) {
 
   useEffect(() => {
     const onData = (base64: string) => {
-      if (client.status !== 'connected') return;
+      if (!connected || client.status !== 'connected') return;
       client.sendRealtimeInput([
         {
           mimeType: 'audio/pcm;rate=16000',
@@ -54,7 +54,9 @@ function ControlTray({ children }: ControlTrayProps) {
         },
       ]);
     };
-    if (connected && !muted && audioRecorder) {
+    
+    // Only start recording if connected and not muted
+    if (connected && !muted) {
       audioRecorder
         .on('data', onData)
         .start()
@@ -73,15 +75,18 @@ function ControlTray({ children }: ControlTrayProps) {
             console.error('Failed to disconnect after microphone error:', e);
           });
         });
-    } else {
+    } else if (audioRecorder) {
       audioRecorder.stop();
     }
     return () => {
+    
       audioRecorder.off('data', onData);
     };
   }, [connected, client, muted, audioRecorder, disconnect]);
 
   const handleConnect = async () => {
+    if (connected) return; // Prevent multiple connection attempts
+    
     try {
       await connect();
     } catch (error) {
@@ -98,6 +103,8 @@ function ControlTray({ children }: ControlTrayProps) {
   };
 
   const handleDisconnect = async () => {
+    if (!connected) return; // Prevent multiple disconnection attempts
+    
     try {
       await disconnect();
     } catch (error) {
@@ -141,6 +148,7 @@ function ControlTray({ children }: ControlTrayProps) {
             ref={connectButtonRef}
             className={cn('action-button connect-toggle', { connected })}
             onClick={connected ? handleDisconnect : handleConnect}
+            disabled={false}
           >
             <span className="material-symbols-outlined filled">
               {connected ? 'pause' : 'play_arrow'}

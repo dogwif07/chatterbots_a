@@ -26,19 +26,10 @@ export default function KeynoteCompanion() {
   const { current } = useAgent();
   const { useGrounding, showAgentEdit, showUserConfig } = useUI();
   const isReconnectingRef = useRef(false);
+  const hasInitializedRef = useRef(false);
 
-  // This effect handles config updates and connection management based on UI state.
+  // Update config whenever settings change (but don't auto-connect)
   useEffect(() => {
-    // If a modal is open, ensure we are disconnected.
-    if (showAgentEdit || showUserConfig) {
-      if (connected && !isReconnectingRef.current) {
-        disconnect().catch(error => {
-          console.error('Failed to disconnect on modal open:', error);
-        });
-      }
-      return; // Do not proceed to connect/reconnect logic
-    }
-
     const newConfig: LiveConnectConfig = {
       responseModalities: [Modality.AUDIO],
       speechConfig: {
@@ -59,73 +50,76 @@ export default function KeynoteCompanion() {
       newConfig.tools = [{ googleSearch: {} }];
     }
 
-    // Check if the config has actually changed to avoid unnecessary actions.
+    // Only update config if it has actually changed
     const configChanged = JSON.stringify(newConfig) !== JSON.stringify(config);
-
     if (configChanged) {
-      // If we are already connected, changing the config requires a reconnect.
-      if (connected) {
-        if (isReconnectingRef.current) {
-          // A reconnect is already in progress. The effect will re-run
-          // once it's done and pick up the latest config.
-          return;
-        }
-
-        const reconnect = async () => {
-          isReconnectingRef.current = true;
-          try {
-            await disconnect();
-            await connect(newConfig);
-          } catch (error) {
-            console.error('Failed to reconnect after settings change:', error);
-            client.emit(
-              'error',
-              new ErrorEvent('error', {
-                error: error as Error,
-                message: 'Failed to apply new settings. Please try again.',
-              })
-            );
-          } finally {
-            isReconnectingRef.current = false;
-          }
-        };
-
-        // Fire and forget; error handling is inside the async function.
-        reconnect();
-      }
-
-      // Always update the config in the context. This will trigger a re-render,
-      // but the reconnect action has already been initiated.
       setConfig(newConfig);
     }
-  }, [
-    user,
-    current,
-    useGrounding,
-    config,
-    connected,
-    showAgentEdit,
-    showUserConfig,
-    setConfig,
-    disconnect,
-    connect,
-    client,
-  ]);
+  }, [user, current, useGrounding, setConfig, config]);
 
-  // Initiate the session when the Live API connection is established
-  // Instruct the model to send an initial greeting message
+  // Handle modal state - disconnect when modals are open
+  useEffect(() => {
+    if (showAgentEdit || showUserConfig) {
+      if (connected && !isReconnectingRef.current) {
+        disconnect().catch(error => {
+          console.error('Failed to disconnect on modal open:', error);
+        });
+      }
+    }
+  }, [showAgentEdit, showUserConfig, connected, disconnect]);
+
+  // Handle reconnection when connected and config changes
+  useEffect(() => {
+    // Don't reconnect if modals are open
+    if (showAgentEdit || showUserConfig) {
+      return;
+    }
+
+    // Only reconnect if we're already connected and config changed
+    if (connected && hasInitializedRef.current && !isReconnectingRef.current) {
+      const reconnect = async () => {
+        isReconnectingRef.current = true;
+        try {
+          await disconnect();
+          await connect(config);
+        } catch (error) {
+          console.error('Failed to reconnect after settings change:', error);
+          client.emit(
+            'error',
+            new ErrorEvent('error', {
+              error: error as Error,
+              message: 'Failed to apply new settings. Please try again.',
+            })
+          );
+        } finally {
+          isReconnectingRef.current = false;
+        }
+      };
+      reconnect();
+    }
+
+    hasInitializedRef.current = true;
+  }, [config, connected, showAgentEdit, showUserConfig, disconnect, connect, client]);
+
+  // Send initial greeting when connection is established
   useEffect(() => {
     const beginSession = async () => {
-      if (!connected || client.status !== 'connected') return;
-      client.send(
-        {
-          text: 'Greet the user and introduce yourself and your role.',
-        },
-        true
-      );
+      // Wait a bit to ensure the connection is fully established
+      if (connected && client.status === 'connected' && !showAgentEdit && !showUserConfig) {
+        setTimeout(() => {
+          if (client.status === 'connected') {
+            client.send(
+              {
+                text: 'Greet the user and introduce yourself and your role.',
+              },
+              true
+            );
+          }
+        }, 500);
+      }
     };
     beginSession();
-  }, [client, connected]);
+  }, [client, connected, showAgentEdit, showUserConfig]);
 
   return (
     <div className="keynote-companion">
