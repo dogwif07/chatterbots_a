@@ -39,7 +39,7 @@ export default function BasicFaceDisplay() {
 
   return (
     <div className="keynote-companion">
-      <BasicFace canvasRef={faceCanvasRef!} color={current.bodyColor} />
+      <BasicFace canvasRef={faceCanvasRef} color={current.bodyColor} />
       <GroundingReferences chunks={groundingChunks} />
     </div>
   );

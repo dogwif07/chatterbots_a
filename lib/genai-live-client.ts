@@ -176,9 +176,14 @@ export class GenAILiveClient {
   }
 
   public disconnect() {
-    this._session?.close();
-    this._session = undefined;
-    this._status = 'disconnected';
+    try {
+      this._session?.close();
+    } catch (error) {
+      console.error('Error closing session:', error);
+    } finally {
+      this._session = undefined;
+      this._status = 'disconnected';
+    }
 
     this.log('client.close', `Disconnected`);
     return true;
@@ -342,6 +347,8 @@ export class GenAILiveClient {
 
   protected onClose(e: CloseEvent) {
     this._status = 'disconnected';
+    this._session = undefined;
+    
     let reason = e.reason || '';
     if (reason.toLowerCase().includes('error')) {
       const prelude = 'ERROR]';

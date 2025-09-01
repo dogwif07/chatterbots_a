@@ -18,8 +18,6 @@ function ControlTray({ children }: ControlTrayProps) {
   
   const connectButtonRef = useRef<HTMLButtonElement>(null);
   const audioRecorderStarted = useRef(false);
-  const connectionTimeoutRef = useRef<NodeJS.Timeout>();
-  const configSetRef = useRef(false);
 
   const { useGrounding, setUseGrounding } = useUI();
   const { client, connected, connect, disconnect, volume, setConfig } = useLiveAPIContext();
@@ -51,14 +49,10 @@ function ControlTray({ children }: ControlTrayProps) {
     return config;
   }, [agent.voice, agent.name, agent.personality, user.name, user.info, useGrounding]);
 
-  // Set config only once when it changes
+  // Set config when it changes
   useEffect(() => {
-    if (!configSetRef.current) {
-      console.log('Setting initial config:', liveConfig);
-      setConfig(liveConfig);
-      setConfigReady(true);
-      configSetRef.current = true;
-    }
+    setConfig(liveConfig);
+    setConfigReady(true);
   }, [liveConfig, setConfig]);
 
   // Focus connect button when not connected
@@ -68,16 +62,10 @@ function ControlTray({ children }: ControlTrayProps) {
     }
   }, [connected]);
 
-  // Audio data handler with proper connection checking
+  // Audio data handler
   const onData = useCallback((base64: string) => {
-    // Comprehensive connection state checking
     if (!connected || client.status !== 'connected') {
-      return; // Silently skip if not connected
-    }
-    
-    // Check WebSocket state if available
-    if (client.session?.readyState !== WebSocket.OPEN) {
-      return; // Silently skip if WebSocket not open
+      return;
     }
     
     try {
@@ -88,46 +76,38 @@ function ControlTray({ children }: ControlTrayProps) {
         },
       ]);
     } catch (error) {
-      // Only log significant errors, ignore WebSocket state errors
-      if (error instanceof Error && !error.message.includes('CLOSING') && !error.message.includes('CLOSED')) {
-        console.error('Error sending audio data:', error);
-      }
+      console.error('Error sending audio data:', error);
     }
   }, [client, connected]);
 
   // Manage audio recorder lifecycle
   useEffect(() => {
-    // Clean up previous listeners
     audioRecorder.off('data', onData);
     
-    if (connected && client.status === 'connected' && !muted && configReady) {
+    if (connected && !muted && configReady) {
       audioRecorder.on('data', onData);
       
       if (!audioRecorderStarted.current) {
         audioRecorder
           .start()
           .then(() => {
-            console.log('Audio recorder started');
             audioRecorderStarted.current = true;
           })
           .catch(error => {
             console.error('Error starting audio recorder:', error);
-            audioRecorderStarted.current = false;
-            // Don't disconnect on microphone errors - let user handle it
           });
       }
     } else {
       if (audioRecorderStarted.current) {
         audioRecorder.stop();
         audioRecorderStarted.current = false;
-        console.log('Audio recorder stopped');
       }
     }
 
     return () => {
       audioRecorder.off('data', onData);
     };
-  }, [connected, client.status, muted, configReady, audioRecorder, onData]);
+  }, [connected, muted, configReady, audioRecorder, onData]);
 
   // Reset audio recorder state when disconnected
   useEffect(() => {
@@ -136,68 +116,35 @@ function ControlTray({ children }: ControlTrayProps) {
     }
   }, [connected]);
 
-  // Connection timeout protection
-  useEffect(() => {
-    if (isConnecting) {
-      connectionTimeoutRef.current = setTimeout(() => {
-        console.error('Connection timeout');
-        setIsConnecting(false);
-      }, 15000);
-
-      return () => {
-        if (connectionTimeoutRef.current) {
-          clearTimeout(connectionTimeoutRef.current);
-        }
-      };
-    }
-  }, [isConnecting]);
-
   const handleConnect = async () => {
-    if (connected || isConnecting || client.status === 'connected') {
-      console.log('Already connected or connecting');
+    if (connected || isConnecting) {
       return;
     }
     
     if (!configReady) {
-      console.log('Config not ready yet');
       return;
     }
     
-    console.log('Starting connection...');
     setIsConnecting(true);
     
     try {
       await connect();
-      console.log('Connection successful');
     } catch (error) {
       console.error('Connection failed:', error);
-      client.emit(
-        'error',
-        new ErrorEvent('error', {
-          error: error as Error,
-          message: `Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        })
-      );
     } finally {
       setIsConnecting(false);
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-      }
     }
   };
 
   const handleDisconnect = async () => {
-    if (!connected || isConnecting || client.status !== 'connected') {
-      console.log('Not connected or processing');
+    if (!connected || isConnecting) {
       return;
     }
     
-    console.log('Starting disconnect...');
     setIsConnecting(true);
     
     try {
       await disconnect();
-      console.log('Disconnect successful');
     } catch (error) {
       console.error('Disconnect failed:', error);
     } finally {
@@ -255,10 +202,7 @@ function ControlTray({ children }: ControlTrayProps) {
           {!connected && (
             <button
               className={cn('grounding-toggle', { active: useGrounding })}
-              onClick={() => {
-                setUseGrounding(!useGrounding);
-                configSetRef.current = false; // Reset config on grounding change
-              }}
+              onClick={() => setUseGrounding(!useGrounding)}
               title={
                 useGrounding
                   ? 'Disable Google Search Grounding'
