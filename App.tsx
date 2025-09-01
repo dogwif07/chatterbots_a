@@ -21,7 +21,7 @@
 import AgentEdit from './components/AgentEdit';
 import ControlTray from './components/console/control-tray/ControlTray';
 import ErrorScreen from './components/demo/ErrorSreen';
-import KeynoteCompanion from './components/demo/keynote-companion/KeynoteCompanion';
+import BasicFaceDisplay from './components/demo/BasicFaceDisplay';
 import Header from './components/Header';
 import UserSettings from './components/UserSettings';
 import { LiveAPIProvider } from './contexts/LiveAPIContext';
@@ -53,7 +53,7 @@ function App() {
         <div className="streaming-console">
           <main>
             <div className="main-app-area">
-              <KeynoteCompanion />
+              <BasicFaceDisplay />
             </div>
 
             <ControlTray></ControlTray>
